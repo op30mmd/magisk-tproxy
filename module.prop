@@ -1,6 +1,6 @@
 id=tproxy_bridge
 name=TProxy Bridge (SOCKS5/HTTP → iptables)
-version=v1.0.0
+version=v1.0.1
 versionCode=10000
 author=Jules
 description=System-wide transparent proxy via TPROXY. No tun0. WebUI control panel.
