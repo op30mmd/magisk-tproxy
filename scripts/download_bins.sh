@@ -28,11 +28,7 @@ echo "ipt2socks version: $IPT2SOCKS_TAG"
 DNSPROXY_TAG=$(get_latest_release "AdguardTeam/dnsproxy")
 echo "dnsproxy version: $DNSPROXY_TAG"
 
-# 4. redsocks2 (using a common static binary source for Android)
-# Since semigodking/redsocks2 doesn't have releases with assets,
-# and others are often prebuilt in other repos.
-# I'll use a placeholder URL or another repository that provides it if found.
-# Actually, I'll try to find a source for redsocks2.
+# 4. redsocks2
 REDSOCKS2_URL_ARM64="https://github.com/Xndm-S/redsocks2-static/releases/download/1.0/redsocks2_arm64"
 REDSOCKS2_URL_ARMV7="https://github.com/Xndm-S/redsocks2-static/releases/download/1.0/redsocks2_armv7"
 REDSOCKS2_URL_X86_64="https://github.com/Xndm-S/redsocks2-static/releases/download/1.0/redsocks2_x86_64"
@@ -40,7 +36,6 @@ REDSOCKS2_URL_X86_64="https://github.com/Xndm-S/redsocks2-static/releases/downlo
 for arch in $ARCHS; do
   mkdir -p "$BASE_DIR/bin/$arch"
 
-  # Map arch to binary suffix
   case $arch in
     "arm64-v8a")
       TPROXY_URL="https://github.com/heiher/hev-socks5-tproxy/releases/download/$TPROXY_TAG/hev-socks5-tproxy-linux-arm64"
@@ -62,21 +57,20 @@ for arch in $ARCHS; do
       ;;
   esac
 
-  # Download hev-socks5-tproxy
   download_file "$TPROXY_URL" "$BASE_DIR/bin/$arch/hev-socks5-tproxy"
   chmod +x "$BASE_DIR/bin/$arch/hev-socks5-tproxy"
 
-  # Download ipt2socks
   download_file "$IPT2SOCKS_URL" "$BASE_DIR/bin/$arch/ipt2socks"
   chmod +x "$BASE_DIR/bin/$arch/ipt2socks"
 
-  # Download dnsproxy
   download_file "$DNSPROXY_URL" "$BASE_DIR/bin/$arch/dnsproxy.tar.gz"
-  tar -xzf "$BASE_DIR/bin/$arch/dnsproxy.tar.gz" -C "$BASE_DIR/bin/$arch" --strip-components=1
-  rm "$BASE_DIR/bin/$arch/dnsproxy.tar.gz"
+  # Extract and find the dnsproxy binary regardless of folder structure
+  mkdir -p "$BASE_DIR/bin/$arch/dnsproxy_tmp"
+  tar -xzf "$BASE_DIR/bin/$arch/dnsproxy.tar.gz" -C "$BASE_DIR/bin/$arch/dnsproxy_tmp"
+  find "$BASE_DIR/bin/$arch/dnsproxy_tmp" -type f -name "dnsproxy" -exec mv {} "$BASE_DIR/bin/$arch/dnsproxy" \;
+  rm -rf "$BASE_DIR/bin/$arch/dnsproxy_tmp" "$BASE_DIR/bin/$arch/dnsproxy.tar.gz"
   chmod +x "$BASE_DIR/bin/$arch/dnsproxy"
 
-  # Download redsocks2 (ignore failure if source is not found, but we try)
   download_file "$REDSOCKS2_URL" "$BASE_DIR/bin/$arch/redsocks2" || true
   if [ -f "$BASE_DIR/bin/$arch/redsocks2" ]; then
     chmod +x "$BASE_DIR/bin/$arch/redsocks2"
