@@ -1,0 +1,40 @@
+{
+  "enabled": false,
+  "mode": "global",
+  "tproxy_port": 12345,
+  "mark": "0x1",
+  "table": 100,
+  "upstream": {
+    "type": "socks5",
+    "host": "127.0.0.1",
+    "port": 1080,
+    "username": "",
+    "password": "",
+    "udp": true
+  },
+  "dns": {
+    "strategy": "hijack",
+    "listen": 5353,
+    "doh": "https://1.1.1.1/dns-query"
+  },
+  "ipv6": {
+    "enabled": false
+  },
+  "apps": {
+    "allow": [],
+    "block": []
+  },
+  "bypass_cidr": [
+    "0.0.0.0/8",
+    "10.0.0.0/8",
+    "100.64.0.0/10",
+    "127.0.0.0/8",
+    "169.254.0.0/16",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "224.0.0.0/4",
+    "240.0.0.0/4",
+    "255.255.255.255/32"
+  ],
+  "killswitch": true
+}

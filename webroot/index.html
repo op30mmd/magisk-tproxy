@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TProxy Bridge</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>TProxy Bridge</h1>
+            <div id="status-badge" class="badge stopped">Stopped</div>
+        </header>
+
+        <section class="card">
+            <h2>Controls</h2>
+            <div class="button-group">
+                <button id="btn-start" class="btn-primary">Start</button>
+                <button id="btn-stop" class="btn-secondary">Stop</button>
+                <button id="btn-restart" class="btn-secondary">Restart</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Configuration</h2>
+            <form id="config-form">
+                <div class="form-group">
+                    <label for="enabled">Enabled on Boot</label>
+                    <input type="checkbox" id="enabled" name="enabled">
+                </div>
+                <div class="form-group">
+                    <label for="mode">Proxy Mode</label>
+                    <select id="mode" name="mode">
+                        <option value="global">Global</option>
+                        <option value="allowlist">Allowlist</option>
+                        <option value="blocklist">Blocklist</option>
+                    </select>
+                </div>
+                <h3>Upstream Proxy</h3>
+                <div class="form-group">
+                    <label for="upstream-type">Type</label>
+                    <select id="upstream-type" name="upstream.type">
+                        <option value="socks5">SOCKS5</option>
+                        <option value="http">HTTP-CONNECT</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="upstream-host">Host</label>
+                    <input type="text" id="upstream-host" name="upstream.host" placeholder="127.0.0.1">
+                </div>
+                <div class="form-group">
+                    <label for="upstream-port">Port</label>
+                    <input type="number" id="upstream-port" name="upstream.port" placeholder="1080">
+                </div>
+                <div class="form-group">
+                    <label for="upstream-username">Username</label>
+                    <input type="text" id="upstream-username" name="upstream.username">
+                </div>
+                <div class="form-group">
+                    <label for="upstream-password">Password</label>
+                    <input type="password" id="upstream-password" name="upstream.password">
+                </div>
+                <div class="form-group">
+                    <label for="upstream-udp">UDP Relay</label>
+                    <input type="checkbox" id="upstream-udp" name="upstream.udp">
+                </div>
+                <button type="submit" id="btn-save" class="btn-primary">Save Settings</button>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2>Logs</h2>
+            <pre id="log-viewer">Waiting for logs...</pre>
+            <button id="btn-refresh-logs" class="btn-secondary">Refresh Logs</button>
+        </section>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
