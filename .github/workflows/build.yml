@@ -4,30 +4,65 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
+  create-tag:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Version
+        id: version
+        run: echo "version=$(grep '^version=' module.prop | cut -d= -f2)" >> $GITHUB_OUTPUT
+
+      - name: Check if Tag Exists
+        id: check
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag $TAG already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag $TAG needs to be created"
+          fi
+
+      - name: Create Tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Update versionCode
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION_CODE=$(date +%s)
+          sed -i "s/^versionCode=.*/versionCode=$VERSION_CODE/" module.prop
+
       - name: Download Binaries
         run: |
           chmod +x scripts/download_bins.sh
           ./scripts/download_bins.sh
-
-      - name: Update module.prop version
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          TAG=${github_ref#refs/tags/v}
-          sed -i "s/^version=.*/version=v$TAG/" module.prop
-          # Extract versionCode from tag if possible or just use date
-          VERSION_CODE=$(date +%s)
-          sed -i "s/^versionCode=.*/versionCode=$VERSION_CODE/" module.prop
-        env:
-          github_ref: ${{ github.ref }}
 
       - name: Build Zip
         run: |
