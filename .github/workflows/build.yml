@@ -9,42 +9,35 @@ on:
   workflow_dispatch:
 
 jobs:
-  create-tag:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  build:
+    permissions: write-all
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Version
-        id: version
-        run: echo "version=$(grep '^version=' module.prop | cut -d= -f2)" >> $GITHUB_OUTPUT
-
-      - name: Check and Create Tag
+      - name: Create Tag from Main
+        if: github.ref == 'refs/heads/main'
+        id: tag
         run: |
-          TAG="${{ steps.version.outputs.version }}"
+          TAG=$(grep '^version=' module.prop | cut -d= -f2)
           if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists, skipping creation"
+            echo "should_release=false" >> $GITHUB_OUTPUT
           else
             git config user.name 'github-actions[bot]'
             git config user.email 'github-actions[bot]@users.noreply.github.com'
             git tag -a "$TAG" -m "Release $TAG"
             git push origin "$TAG"
             echo "Tag $TAG created"
+            echo "should_release=true" >> $GITHUB_OUTPUT
           fi
 
-  build:
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Update versionCode
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           VERSION_CODE=$(date +%s)
           sed -i "s/^versionCode=.*/versionCode=$VERSION_CODE/" module.prop
@@ -61,7 +54,7 @@ jobs:
           echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
 
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || steps.tag.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ZIP_PATH }}
