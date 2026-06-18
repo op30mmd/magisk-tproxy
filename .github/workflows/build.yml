@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -15,26 +13,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create Tag from Main
-        if: github.ref == 'refs/heads/main'
-        id: tag
-        run: |
-          TAG=$(grep '^version=' module.prop | cut -d= -f2)
-          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists, skipping creation"
-            echo "should_release=false" >> $GITHUB_OUTPUT
-          else
-            git config user.name 'github-actions[bot]'
-            git config user.email 'github-actions[bot]@users.noreply.github.com'
-            git tag -a "$TAG" -m "Release $TAG"
-            git push origin "$TAG"
-            echo "Tag $TAG created"
-            echo "should_release=true" >> $GITHUB_OUTPUT
-          fi
+      - name: Extract Version
+        id: version
+        run: echo "version=$(grep '^version=' module.prop | cut -d= -f2)" >> $GITHUB_OUTPUT
 
       - name: Update versionCode
         run: |
@@ -48,14 +30,22 @@ jobs:
 
       - name: Build Zip
         run: |
-          ZIP_NAME="tproxy-bridge-$(grep '^version=' module.prop | cut -d= -f2).zip"
+          ZIP_NAME="tproxy-bridge-${{ steps.version.outputs.version }}.zip"
           zip -r "$ZIP_NAME" . -x "*.git*" ".github*" "README.md" "LICENSE" "scripts/download_bins.sh" "test*"
           echo "ZIP_PATH=$ZIP_NAME" >> $GITHUB_ENV
 
+      - name: Create Tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -f "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}" --force
+
       - name: Create Release
-        if: (github.ref == 'refs/heads/main' && steps.tag.outputs.should_release == 'true') || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.version }}
           files: ${{ env.ZIP_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
