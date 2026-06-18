@@ -13,7 +13,27 @@ get_latest_release() {
 
 download_file() {
   echo "Downloading $2 from $1..."
-  curl -L -o "$2" "$1"
+  curl -fL -o "$2" "$1"
+  if [ ! -s "$2" ]; then
+    echo "Error: Downloaded file $2 is empty"
+    return 1
+  fi
+}
+
+verify_binary() {
+  local bin="$1"
+  if [ ! -f "$bin" ]; then
+    echo "Error: Binary $bin not found"
+    return 1
+  fi
+  # Check ELF magic bytes (7f 45 4c 46)
+  local magic
+  magic=$(od -A n -t x1 -N 4 "$bin" 2>/dev/null | tr -d ' ')
+  if [ "$magic" != "7f454c46" ]; then
+    echo "Error: $bin is not a valid ELF binary (magic: $magic)"
+    return 1
+  fi
+  echo "Verified: $bin"
 }
 
 # 1. hev-socks5-tproxy
@@ -59,9 +79,11 @@ for arch in $ARCHS; do
 
   download_file "$TPROXY_URL" "$BASE_DIR/bin/$arch/hev-socks5-tproxy"
   chmod +x "$BASE_DIR/bin/$arch/hev-socks5-tproxy"
+  verify_binary "$BASE_DIR/bin/$arch/hev-socks5-tproxy"
 
   download_file "$IPT2SOCKS_URL" "$BASE_DIR/bin/$arch/ipt2socks"
   chmod +x "$BASE_DIR/bin/$arch/ipt2socks"
+  verify_binary "$BASE_DIR/bin/$arch/ipt2socks"
 
   download_file "$DNSPROXY_URL" "$BASE_DIR/bin/$arch/dnsproxy.tar.gz"
   # Extract and find the dnsproxy binary regardless of folder structure
@@ -70,11 +92,13 @@ for arch in $ARCHS; do
   find "$BASE_DIR/bin/$arch/dnsproxy_tmp" -type f -name "dnsproxy" -exec mv {} "$BASE_DIR/bin/$arch/dnsproxy" \;
   rm -rf "$BASE_DIR/bin/$arch/dnsproxy_tmp" "$BASE_DIR/bin/$arch/dnsproxy.tar.gz"
   chmod +x "$BASE_DIR/bin/$arch/dnsproxy"
+  verify_binary "$BASE_DIR/bin/$arch/dnsproxy"
 
   download_file "$REDSOCKS2_URL" "$BASE_DIR/bin/$arch/redsocks2" || true
   if [ -f "$BASE_DIR/bin/$arch/redsocks2" ]; then
     chmod +x "$BASE_DIR/bin/$arch/redsocks2"
+    verify_binary "$BASE_DIR/bin/$arch/redsocks2"
   fi
 done
 
-echo "Binaries downloaded successfully."
+echo "Binaries downloaded and verified successfully."

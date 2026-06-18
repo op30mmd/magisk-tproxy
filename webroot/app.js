@@ -67,9 +67,8 @@ const saveConfig = async (e) => {
     };
 
     const configStr = JSON.stringify(newConfig, null, 2);
-    // Escape single quotes for shell
-    const escapedConfig = configStr.replace(/'/g, "'\\''");
-    await exec(`echo '${escapedConfig}' > ${CONFIG_JSON}`);
+    // Use heredoc with quoted delimiter to prevent shell interpretation
+    await exec(`cat <<'__TPROXY_CFG__' > ${CONFIG_JSON}\n${configStr}\n__TPROXY_CFG__`);
     state.config = newConfig;
     alert('Settings saved!');
 };

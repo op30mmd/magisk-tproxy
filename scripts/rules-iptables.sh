@@ -7,26 +7,41 @@ IPTABLES="iptables"
 IP6TABLES="ip6tables"
 
 apply_iptables() {
-    local TPORT=$(read_cfg "tproxy_port")
-    local MARK=$(read_cfg "mark")
-    local TABLE=$(read_cfg "table")
-    local MODE=$(read_cfg "mode")
-    local BRIDGE_UID=$(cat "$MODDIR/logs/bridge.uid" 2>/dev/null || echo "0")
-    local IPV6_ENABLED=$(get_ipv6_val enabled)
+    local TPORT
+    TPORT=$(read_cfg "tproxy_port")
+    local MARK
+    MARK=$(read_cfg "mark")
+    local TABLE
+    TABLE=$(read_cfg "table")
+    local MODE
+    MODE=$(read_cfg "mode")
+    local BRIDGE_UID
+    BRIDGE_UID=$(cat "$MODDIR/logs/bridge.uid" 2>/dev/null || echo "1000")
+    local IPV6_ENABLED
+    IPV6_ENABLED=$(get_ipv6_val enabled)
+
+    # Validate all values before applying
+    validate_port "$TPORT" || { log "Error: invalid tproxy_port '$TPORT'"; return 1; }
+    validate_mark "$MARK" || { log "Error: invalid mark '$MARK'"; return 1; }
+    validate_numeric "$TABLE" || { log "Error: invalid table '$TABLE'"; return 1; }
+    validate_numeric "$BRIDGE_UID" || { log "Error: invalid bridge UID '$BRIDGE_UID'"; return 1; }
 
     # 1. Routing Policy
-    ip rule add fwmark $MARK/$MARK lookup $TABLE
-    ip route add local default dev lo table $TABLE
+    ip rule add fwmark "$MARK/$MARK" lookup "$TABLE" 2>/dev/null
+    ip route add local default dev lo table "$TABLE" 2>/dev/null
 
     # IPv6 Routing
     if [ "$IPV6_ENABLED" = "true" ]; then
-        ip -6 rule add fwmark $MARK/$MARK lookup $TABLE
-        ip -6 route add local default dev lo table $TABLE
+        ip -6 rule add fwmark "$MARK/$MARK" lookup "$TABLE" 2>/dev/null
+        ip -6 route add local default dev lo table "$TABLE" 2>/dev/null
     fi
 
-    # 2. Mangle Table - PREROUTING
-    # IPv4
+    # 2. Mangle Table - PREROUTING (flush first to avoid chain-already-exists errors)
+    $IPTABLES -t mangle -D PREROUTING -j PROXY_PRE 2>/dev/null
+    $IPTABLES -t mangle -F PROXY_PRE 2>/dev/null
+    $IPTABLES -t mangle -X PROXY_PRE 2>/dev/null
     $IPTABLES -t mangle -N PROXY_PRE
+
     $IPTABLES -t mangle -A PROXY_PRE -p tcp -m socket -j DIVERT
     $IPTABLES -t mangle -A PROXY_PRE -p udp -m socket -j DIVERT
 
@@ -40,7 +55,11 @@ apply_iptables() {
 
     # IPv6 Mangle
     if [ "$IPV6_ENABLED" = "true" ]; then
+        $IP6TABLES -t mangle -D PREROUTING -j PROXY_PRE 2>/dev/null
+        $IP6TABLES -t mangle -F PROXY_PRE 2>/dev/null
+        $IP6TABLES -t mangle -X PROXY_PRE 2>/dev/null
         $IP6TABLES -t mangle -N PROXY_PRE
+
         $IP6TABLES -t mangle -A PROXY_PRE -p tcp -m socket -j DIVERT
         $IP6TABLES -t mangle -A PROXY_PRE -p udp -m socket -j DIVERT
         # Add IPv6 reserved ranges
@@ -53,21 +72,27 @@ apply_iptables() {
     fi
 
     # DIVERT helper (IPv4 & IPv6)
+    $IPTABLES -t mangle -F DIVERT 2>/dev/null
+    $IPTABLES -t mangle -X DIVERT 2>/dev/null
     $IPTABLES -t mangle -N DIVERT
     $IPTABLES -t mangle -A DIVERT -j MARK --set-mark "$MARK"
     $IPTABLES -t mangle -A DIVERT -j ACCEPT
 
     if [ "$IPV6_ENABLED" = "true" ]; then
+        $IP6TABLES -t mangle -F DIVERT 2>/dev/null
+        $IP6TABLES -t mangle -X DIVERT 2>/dev/null
         $IP6TABLES -t mangle -N DIVERT
         $IP6TABLES -t mangle -A DIVERT -j MARK --set-mark "$MARK"
         $IP6TABLES -t mangle -A DIVERT -j ACCEPT
     fi
 
     # 3. Mangle Table - OUTPUT
+    $IPTABLES -t mangle -D OUTPUT -j PROXY_OUT 2>/dev/null
+    $IPTABLES -t mangle -F PROXY_OUT 2>/dev/null
+    $IPTABLES -t mangle -X PROXY_OUT 2>/dev/null
     $IPTABLES -t mangle -N PROXY_OUT
-    $IPTABLES -t mangle -A PROXY_OUT -m mark --mark 0xff -j RETURN # LOOP_MARK
-    # If not using mark, fallback to UID if bridge is not root,
-    # but here we emphasize mark 0xff for the bridge.
+
+    $IPTABLES -t mangle -A PROXY_OUT -m mark --mark 0xff -j RETURN
     $IPTABLES -t mangle -A PROXY_OUT -o lo -j RETURN
 
     for n in $(get_bypass_cidrs); do
@@ -93,13 +118,16 @@ apply_iptables() {
 
     # IPv6 Output
     if [ "$IPV6_ENABLED" = "true" ]; then
+        $IP6TABLES -t mangle -D OUTPUT -j PROXY_OUT 2>/dev/null
+        $IP6TABLES -t mangle -F PROXY_OUT 2>/dev/null
+        $IP6TABLES -t mangle -X PROXY_OUT 2>/dev/null
         $IP6TABLES -t mangle -N PROXY_OUT
+
         $IP6TABLES -t mangle -A PROXY_OUT -m mark --mark 0xff -j RETURN
         $IP6TABLES -t mangle -A PROXY_OUT -o lo -j RETURN
         for n in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
             $IP6TABLES -t mangle -A PROXY_OUT -d "$n" -j RETURN
         done
-        # ... Mode logic mirrored for IPv6
         if [ "$MODE" = "allowlist" ]; then
             for uid in $(get_app_uids "allow"); do
                 $IP6TABLES -t mangle -A PROXY_OUT -m owner --uid-owner "$uid" -j MARK --set-mark "$MARK"
@@ -119,8 +147,15 @@ apply_iptables() {
 
     # 4. DNS Hijack (NAT Table)
     if [ "$(get_dns_val strategy)" = "hijack" ]; then
-        local DNS_PORT=$(get_dns_val listen)
+        local DNS_PORT
+        DNS_PORT=$(get_dns_val listen)
+        validate_port "$DNS_PORT" || { log "Error: invalid DNS port '$DNS_PORT'"; return 1; }
+
+        $IPTABLES -t nat -D OUTPUT -j PROXY_DNS 2>/dev/null
+        $IPTABLES -t nat -F PROXY_DNS 2>/dev/null
+        $IPTABLES -t nat -X PROXY_DNS 2>/dev/null
         $IPTABLES -t nat -N PROXY_DNS
+
         $IPTABLES -t nat -A PROXY_DNS -p udp --dport 53 -m owner ! --uid-owner "$BRIDGE_UID" -j REDIRECT --to-ports "$DNS_PORT"
         $IPTABLES -t nat -A PROXY_DNS -p tcp --dport 53 -m owner ! --uid-owner "$BRIDGE_UID" -j REDIRECT --to-ports "$DNS_PORT"
         $IPTABLES -t nat -A OUTPUT -j PROXY_DNS
@@ -128,14 +163,16 @@ apply_iptables() {
 }
 
 flush_iptables() {
-    local MARK=$(read_cfg "mark")
-    local TABLE=$(read_cfg "table")
+    local MARK
+    MARK=$(read_cfg "mark")
+    local TABLE
+    TABLE=$(read_cfg "table")
 
     # Routing Policy
-    ip rule del fwmark $MARK/$MARK lookup $TABLE 2>/dev/null
-    ip route flush table $TABLE 2>/dev/null
-    ip -6 rule del fwmark $MARK/$MARK lookup $TABLE 2>/dev/null
-    ip -6 route flush table $TABLE 2>/dev/null
+    ip rule del fwmark "$MARK/$MARK" lookup "$TABLE" 2>/dev/null
+    ip route flush table "$TABLE" 2>/dev/null
+    ip -6 rule del fwmark "$MARK/$MARK" lookup "$TABLE" 2>/dev/null
+    ip -6 route flush table "$TABLE" 2>/dev/null
 
     # Mangle Table
     for ipt in $IPTABLES $IP6TABLES; do
